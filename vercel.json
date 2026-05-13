@@ -9,17 +9,18 @@
       }
     },
     {
-      "src": "dist/api/index.js",
+      "src": "api/index.ts",
       "use": "@vercel/node",
       "config": {
-        "maxLambdaSize": "15mb"
+        "includeFiles": ["server/**", "shared/**"],
+        "maxLambdaSize": "50mb"
       }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "dist/api/index.js"
+      "dest": "api/index.ts"
     },
     {
       "src": "/assets/(.*)",
