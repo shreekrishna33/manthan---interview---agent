@@ -1,34 +1,27 @@
-// Vercel Serverless Entry — Plain CommonJS
-// Uses @tursodatabase/serverless which is explicitly built for serverless/edge
-// No streaming issues, no Web Streams API dependency, works on ALL Node.js versions
+// api/index.js — Vercel serverless handler
+// api/package.json sets "type":"commonjs" so require() works here
+"use strict";
 
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { connect } = require("@tursodatabase/serverless");
 
-// ─── Database ─────────────────────────────────────────────────────────────────
-const dbUrl = process.env.DATABASE_URL;
+// ─── DB ───────────────────────────────────────────────────────────────────────
+const dbUrl   = process.env.DATABASE_URL;
 const dbToken = process.env.DATABASE_AUTH_TOKEN;
-
-if (!dbUrl) {
-  console.error("[FATAL] DATABASE_URL is not set!");
-}
 
 let _db = null;
 function getDb() {
-  if (!_db) {
-    _db = connect({ url: dbUrl, authToken: dbToken });
-  }
+  if (!_db) _db = connect({ url: dbUrl, authToken: dbToken });
   return _db;
 }
 
 async function initDb() {
   const db = getDb();
-  await db.execute(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL, created_at INTEGER DEFAULT (unixepoch()) NOT NULL)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER DEFAULT (unixepoch()) NOT NULL)`);
-  console.log("[DB] Tables ready.");
+  await db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL)");
+  await db.execute("CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL, created_at INTEGER DEFAULT (unixepoch()) NOT NULL)");
+  await db.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER DEFAULT (unixepoch()) NOT NULL)");
 }
 
 // ─── AI (lazy) ────────────────────────────────────────────────────────────────
@@ -37,33 +30,33 @@ function getAI() {
   if (!_ai) {
     const { GoogleGenAI } = require("@google/genai");
     const key = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-    if (!key) throw new Error("AI_INTEGRATIONS_GEMINI_API_KEY is not set in Vercel environment variables.");
+    if (!key) throw new Error("AI_INTEGRATIONS_GEMINI_API_KEY is not set.");
     _ai = new GoogleGenAI({ apiKey: key });
   }
   return _ai;
 }
 
-const SYSTEM_PROMPT = `You are Manthan, a super friendly, encouraging AI Interview Coach. Your default mode is INTERVIEWER.
+const SYSTEM_PROMPT = `You are Manthan, a super friendly AI Interview Coach. Default mode: INTERVIEWER.
 
 MODES:
-1. INTERVIEWER Mode (Default): Conduct mock interviews. Ask ONE question at a time. Give feedback.
-2. ATTENDER Mode: Be a study buddy, provide questions AND answers.
+1. INTERVIEWER (Default): Conduct mock interviews, ask ONE question at a time, give feedback.
+2. ATTENDER: Study buddy — give questions AND answers.
 
 COMMANDS: /mode interviewer, /mode attender, /start, /trending
 
-RESPONSE FORMAT (MANDATORY):
-<reasoning>[Your internal analysis]</reasoning>
-<response>[Your friendly response to the user]</response>
+MANDATORY RESPONSE FORMAT:
+<reasoning>[internal analysis]</reasoning>
+<response>[your reply to the user]</response>
 
-Start by asking the user what role they are preparing for.`;
+Start by asking what role they are preparing for.`;
 
-// ─── Express App ──────────────────────────────────────────────────────────────
+// ─── Express ──────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-const JWT_SECRET = process.env.SESSION_SECRET || "manthan-jwt-secret-2024";
+const JWT_SECRET = process.env.SESSION_SECRET || "manthan-secret-2024";
 
 // Auth middleware
 app.use(async (req, res, next) => {
@@ -72,177 +65,136 @@ app.use(async (req, res, next) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      const db = getDb();
-      const result = await db.execute({ sql: "SELECT * FROM users WHERE id = ? LIMIT 1", args: [decoded.id] });
-      if (result.rows.length > 0) {
-        req.user = { id: result.rows[0].id, username: result.rows[0].username };
-        req.isAuthenticated = () => true;
-      }
+      const r = await getDb().execute({ sql: "SELECT id, username FROM users WHERE id = ? LIMIT 1", args: [decoded.id] });
+      if (r.rows.length) { req.user = r.rows[0]; req.isAuthenticated = () => true; }
     } catch (_) {}
   }
   next();
 });
 
-// ─── Auth Routes ──────────────────────────────────────────────────────────────
+// Register
 app.post("/api/register", async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ message: "Username and password are required." });
-    const db = getDb();
-    const existing = await db.execute({ sql: "SELECT id FROM users WHERE username = ? LIMIT 1", args: [username] });
-    if (existing.rows.length > 0) return res.status(400).json({ message: "Username already exists." });
-    const inserted = await db.execute({ sql: "INSERT INTO users (username, password) VALUES (?, ?) RETURNING id, username", args: [username, password] });
-    const user = inserted.rows[0];
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ message: "Username and password required." });
+    const exists = await getDb().execute({ sql: "SELECT id FROM users WHERE username = ? LIMIT 1", args: [username] });
+    if (exists.rows.length) return res.status(400).json({ message: "Username already exists." });
+    const ins = await getDb().execute({ sql: "INSERT INTO users (username, password) VALUES (?, ?) RETURNING id, username", args: [username, password] });
+    const user = ins.rows[0];
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
-    res.cookie("auth_token", token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, path: "/", secure: true, sameSite: "none" });
+    res.cookie("auth_token", token, { httpOnly: true, maxAge: 604800000, path: "/", secure: true, sameSite: "none" });
     return res.status(201).json({ id: user.id, username: user.username });
-  } catch (err) {
-    console.error("[/api/register]", err);
-    return res.status(500).json({ message: String(err.message || err) });
-  }
+  } catch (e) { console.error("[register]", e); return res.status(500).json({ message: String(e.message) }); }
 });
 
+// Login
 app.post("/api/login", async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ message: "Username and password are required." });
-    const db = getDb();
-    const result = await db.execute({ sql: "SELECT * FROM users WHERE username = ? LIMIT 1", args: [username] });
-    const user = result.rows[0];
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ message: "Username and password required." });
+    const r = await getDb().execute({ sql: "SELECT * FROM users WHERE username = ? LIMIT 1", args: [username] });
+    const user = r.rows[0];
     if (!user || user.password !== password) return res.status(401).json({ message: "Incorrect username or password." });
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
-    res.cookie("auth_token", token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, path: "/", secure: true, sameSite: "none" });
+    res.cookie("auth_token", token, { httpOnly: true, maxAge: 604800000, path: "/", secure: true, sameSite: "none" });
     return res.status(200).json({ id: user.id, username: user.username });
-  } catch (err) {
-    console.error("[/api/login]", err);
-    return res.status(500).json({ message: String(err.message || err) });
-  }
+  } catch (e) { console.error("[login]", e); return res.status(500).json({ message: String(e.message) }); }
 });
 
-app.post("/api/logout", (req, res) => {
-  res.clearCookie("auth_token", { path: "/" });
-  res.sendStatus(200);
-});
+app.post("/api/logout", (req, res) => { res.clearCookie("auth_token", { path: "/" }); res.sendStatus(200); });
 
 app.get("/api/user", (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   res.json(req.user);
 });
 
-// ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/api/health", async (req, res) => {
   try {
-    const db = getDb();
-    await db.execute("SELECT 1");
+    await getDb().execute("SELECT 1");
     res.json({ status: "ok", db: dbUrl ? "remote" : "local", ts: new Date().toISOString() });
-  } catch (err) {
-    res.status(500).json({ status: "error", error: String(err.message || err) });
-  }
+  } catch (e) { res.status(500).json({ status: "error", error: String(e.message) }); }
 });
 
-// ─── Chat Routes ──────────────────────────────────────────────────────────────
+// Conversations
 app.get("/api/conversations", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
-    const db = getDb();
-    const result = await db.execute({ sql: "SELECT * FROM conversations WHERE user_id = ? ORDER BY created_at DESC", args: [req.user.id] });
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: String(err.message || err) }); }
+    const r = await getDb().execute({ sql: "SELECT * FROM conversations WHERE user_id = ? ORDER BY created_at DESC", args: [req.user.id] });
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: String(e.message) }); }
 });
 
 app.get("/api/conversations/:id", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
-    const db = getDb();
-    const conv = await db.execute({ sql: "SELECT * FROM conversations WHERE id = ? AND user_id = ? LIMIT 1", args: [req.params.id, req.user.id] });
-    if (!conv.rows.length) return res.status(404).json({ error: "Not found" });
-    const msgs = await db.execute({ sql: "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC", args: [req.params.id] });
-    res.json({ ...conv.rows[0], messages: msgs.rows });
-  } catch (err) { res.status(500).json({ error: String(err.message || err) }); }
+    const c = await getDb().execute({ sql: "SELECT * FROM conversations WHERE id = ? AND user_id = ? LIMIT 1", args: [req.params.id, req.user.id] });
+    if (!c.rows.length) return res.status(404).json({ error: "Not found" });
+    const m = await getDb().execute({ sql: "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC", args: [req.params.id] });
+    res.json({ ...c.rows[0], messages: m.rows });
+  } catch (e) { res.status(500).json({ error: String(e.message) }); }
 });
 
 app.post("/api/conversations", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
-    const db = getDb();
-    const { title } = req.body;
-    const conv = await db.execute({ sql: "INSERT INTO conversations (user_id, title) VALUES (?, ?) RETURNING *", args: [req.user.id, title || "New Chat"] });
-    const convRow = conv.rows[0];
-    const welcome = `Hi! I'm **Manthan**, your AI Interview Coach! 👋\n\nChoose a mode:\n\n**1. 👔 Interview Mode (Default)**\n\`/start\` - Begin mock interview\n\n**2. 📚 Study Mode**\n\`/mode attender\` - Get Q&A to study\n\`/trending\` - Top trending topics\n\nWhat role are you preparing for? 🚀`;
-    await db.execute({ sql: "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", args: [convRow.id, "assistant", welcome] });
-    res.status(201).json(convRow);
-  } catch (err) { res.status(500).json({ error: String(err.message || err) }); }
+    const title = (req.body && req.body.title) || "New Chat";
+    const c = await getDb().execute({ sql: "INSERT INTO conversations (user_id, title) VALUES (?, ?) RETURNING *", args: [req.user.id, title] });
+    const conv = c.rows[0];
+    const welcome = "Hi! I'm **Manthan**, your AI Interview Coach! 👋\n\n**Modes:**\n- `/start` — Begin mock interview\n- `/mode attender` — Study mode\n- `/trending` — Top interview Q&A\n\nWhat role are you preparing for? 🚀";
+    await getDb().execute({ sql: "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", args: [conv.id, "assistant", welcome] });
+    res.status(201).json(conv);
+  } catch (e) { res.status(500).json({ error: String(e.message) }); }
 });
 
 app.delete("/api/conversations/:id", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
-    const db = getDb();
-    await db.execute({ sql: "DELETE FROM messages WHERE conversation_id = ?", args: [req.params.id] });
-    await db.execute({ sql: "DELETE FROM conversations WHERE id = ? AND user_id = ?", args: [req.params.id, req.user.id] });
+    await getDb().execute({ sql: "DELETE FROM messages WHERE conversation_id = ?", args: [req.params.id] });
+    await getDb().execute({ sql: "DELETE FROM conversations WHERE id = ? AND user_id = ?", args: [req.params.id, req.user.id] });
     res.status(204).send();
-  } catch (err) { res.status(500).json({ error: String(err.message || err) }); }
+  } catch (e) { res.status(500).json({ error: String(e.message) }); }
 });
 
+// Chat (SSE stream)
 app.post("/api/conversations/:id/messages", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
-    const db = getDb();
-    const { content } = req.body;
-    const convId = req.params.id;
-    await db.execute({ sql: "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", args: [convId, "user", content] });
-    const allMsgs = await db.execute({ sql: "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC", args: [convId] });
-    const chatHistory = allMsgs.rows.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
-    if (chatHistory.length > 0 && chatHistory[0].role === "user") {
-      chatHistory[0].parts[0].text = SYSTEM_PROMPT + "\n\n" + chatHistory[0].parts[0].text;
-    }
+    const cid = req.params.id;
+    const content = req.body && req.body.content;
+    await getDb().execute({ sql: "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", args: [cid, "user", content] });
+    const msgs = await getDb().execute({ sql: "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC", args: [cid] });
+    const history = msgs.rows.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+    if (history.length && history[0].role === "user") history[0].parts[0].text = SYSTEM_PROMPT + "\n\n" + history[0].parts[0].text;
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    const ai = getAI();
-    const stream = await ai.models.generateContentStream({ model: "gemini-2.5-flash", contents: chatHistory });
-    let fullResponse = "";
-    for await (const chunk of stream) {
-      const t = chunk.text;
-      if (t) { fullResponse += t; res.write(`data: ${JSON.stringify({ content: t })}\n\n`); }
-    }
-    const match = fullResponse.match(/<response>([\s\S]*?)<\/response>/);
-    const clean = match ? match[1].trim() : fullResponse;
-    await db.execute({ sql: "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", args: [convId, "assistant", clean] });
+    const stream = await getAI().models.generateContentStream({ model: "gemini-2.5-flash", contents: history });
+    let full = "";
+    for await (const chunk of stream) { const t = chunk.text; if (t) { full += t; res.write(`data: ${JSON.stringify({ content: t })}\n\n`); } }
+    const match = full.match(/<response>([\s\S]*?)<\/response>/);
+    const clean = match ? match[1].trim() : full;
+    await getDb().execute({ sql: "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", args: [cid, "assistant", clean] });
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
-  } catch (err) {
-    console.error("[sendMessage]", err);
-    if (!res.headersSent) res.status(500).json({ error: String(err.message || err) });
-    else { res.write(`data: ${JSON.stringify({ error: "Failed to generate response." })}\n\n`); res.end(); }
+  } catch (e) {
+    console.error("[chat]", e);
+    if (!res.headersSent) res.status(500).json({ error: String(e.message) });
+    else { res.write(`data: ${JSON.stringify({ error: "Failed." })}\n\n`); res.end(); }
   }
 });
 
-app.use((err, req, res, next) => {
-  console.error("[Global Error]", err);
-  res.status(err.status || 500).json({ message: err.message || "Internal Server Error" });
-});
+app.use((err, req, res, next) => { res.status(err.status || 500).json({ message: err.message || "Error" }); });
 
-// ─── DB Init Guard ────────────────────────────────────────────────────────────
-let dbReady = false;
-let dbPromise = null;
-
+// ─── DB init guard ────────────────────────────────────────────────────────────
+let ready = false, initPromise = null;
 function ensureDb() {
-  if (dbReady) return Promise.resolve();
-  if (!dbPromise) {
-    dbPromise = initDb()
-      .then(() => { dbReady = true; })
-      .catch((err) => { console.error("[DB init failed]", err); dbPromise = null; throw err; });
-  }
-  return dbPromise;
+  if (ready) return Promise.resolve();
+  if (!initPromise) initPromise = initDb().then(() => { ready = true; }).catch((e) => { initPromise = null; throw e; });
+  return initPromise;
 }
 
 module.exports = async function handler(req, res) {
-  try { await ensureDb(); } catch (err) {
-    return res.status(503).json({ message: "Database initialization failed: " + String(err.message || err) });
-  }
+  try { await ensureDb(); }
+  catch (e) { return res.status(503).json({ message: "Database initialization failed: " + String(e.message) }); }
   return app(req, res);
 };
