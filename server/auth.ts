@@ -18,7 +18,17 @@ export function setupAuth(app: Express) {
     if (token) {
       try {
         const decoded = jwt.verify(token, JWT_SECRET) as any;
-        const [user] = await db.select().from(users).where(eq(users.id, decoded.id)).limit(1);
+        let [user] = await db.select().from(users).where(eq(users.id, decoded.id)).limit(1);
+        
+        // If the database was wiped (Vercel ephemeral storage), re-create a dummy user
+        if (!user && !process.env.DATABASE_URL) {
+           const [newUser] = await db.insert(users).values({ 
+             username: `user_${decoded.id}`, 
+             password: 'ephemeral_password' 
+           }).returning();
+           user = newUser;
+        }
+
         if (user) {
           (req as any).user = user;
           (req as any).isAuthenticated = () => true;
@@ -42,7 +52,13 @@ export function setupAuth(app: Express) {
       const [user] = await db.insert(users).values({ username, password }).returning();
       
       const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      res.cookie('auth_token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+      res.cookie('auth_token', token, { 
+        httpOnly: true, 
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+      });
       res.status(201).json(user);
     } catch (err) {
       next(err);
@@ -52,14 +68,26 @@ export function setupAuth(app: Express) {
   app.post("/api/login", async (req, res, next) => {
     try {
       const { username, password } = req.body;
-      const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      let [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
       
+      // If the database was wiped (Vercel ephemeral storage), auto-register them
+      if (!user && !process.env.DATABASE_URL) {
+        const [newUser] = await db.insert(users).values({ username, password }).returning();
+        user = newUser;
+      }
+
       if (!user || user.password !== password) {
         return res.status(401).json({ message: "Incorrect username or password." });
       }
 
       const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
-      res.cookie('auth_token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+      res.cookie('auth_token', token, { 
+        httpOnly: true, 
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+      });
       res.status(200).json(user);
     } catch (err) {
       next(err);
@@ -67,7 +95,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/logout", (req, res) => {
-    res.clearCookie('auth_token');
+    res.clearCookie('auth_token', { path: '/' });
     res.sendStatus(200);
   });
 
