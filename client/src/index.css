@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ─── LIGHT MODE ─── */
+  :root {
+    /* Indigo/Blue professional palette */
+    --background:    220 30% 97%;       /* Soft off-white blue-gray */
+    --foreground:    222 47% 11%;       /* Deep navy text */
+
+    --card:          0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover:       0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary:       234 89% 60%;       /* Royal Indigo */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary:     214 32% 91%;       /* Soft blue-gray */
+    --secondary-foreground: 222 47% 25%;
+
+    --muted:         218 27% 92%;
+    --muted-foreground: 220 13% 50%;
+
+    --accent:        262 83% 64%;       /* Purple accent */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive:   0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border:        214 20% 87%;
+    --input:         214 20% 87%;
+    --ring:          234 89% 60%;
+
+    --radius: 0.75rem;
+  }
+
+  /* ─── DARK MODE ─── */
+  .dark {
+    --background:    222 47% 8%;        /* Deep navy */
+    --foreground:    213 31% 93%;       /* Soft white */
+
+    --card:          222 40% 11%;       /* Slightly lighter navy */
+    --card-foreground: 213 31% 93%;
+
+    --popover:       222 40% 11%;
+    --popover-foreground: 213 31% 93%;
+
+    --primary:       234 89% 68%;       /* Bright Indigo (lighter for dark bg) */
+    --primary-foreground: 222 47% 8%;
+
+    --secondary:     217 33% 17%;       /* Dark blue-gray */
+    --secondary-foreground: 213 31% 80%;
+
+    --muted:         215 28% 17%;
+    --muted-foreground: 218 14% 58%;
+
+    --accent:        262 83% 72%;       /* Bright violet */
+    --accent-foreground: 222 47% 8%;
+
+    --destructive:   0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border:        217 19% 22%;
+    --input:         217 19% 22%;
+    --ring:          234 89% 68%;
+
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border transition-colors duration-200;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
+  }
+
+  .font-display {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+  }
+
+  /* ─── Custom Scrollbar ─── */
+  .scrollbar-custom::-webkit-scrollbar { width: 5px; height: 5px; }
+  .scrollbar-custom::-webkit-scrollbar-track { @apply bg-transparent; }
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+
+  /* ─── Glitch/Scanlines ─── Removed cleanly */
+  .glitch-text { position: relative; }
+  .scanlines   { display: none; }
+
+  /* ─── Theme toggle ─── */
+  .theme-toggle {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full border-2 border-transparent
+           cursor-pointer transition-colors duration-300 focus-visible:outline-none
+           focus-visible:ring-2 focus-visible:ring-ring;
+  }
+  .theme-toggle-thumb {
+    @apply pointer-events-none inline-block h-4 w-4 rounded-full shadow-lg
+           transform transition-transform duration-300;
+  }
+}
+
+
