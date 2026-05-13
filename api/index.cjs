@@ -5,7 +5,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { drizzle } = require("drizzle-orm/libsql");
-const { createClient } = require("@libsql/client");
+const { createClient } = require("@libsql/client/web");
 const { sqliteTable, integer, text } = require("drizzle-orm/sqlite-core");
 const { eq, desc, sql: drizzleSql } = require("drizzle-orm");
 // GoogleGenAI is required lazily inside the route — NOT at module load time
