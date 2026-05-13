@@ -8,7 +8,8 @@ const { drizzle } = require("drizzle-orm/libsql");
 const { createClient } = require("@libsql/client");
 const { sqliteTable, integer, text } = require("drizzle-orm/sqlite-core");
 const { eq, desc, sql: drizzleSql } = require("drizzle-orm");
-const { GoogleGenAI } = require("@google/genai");
+// GoogleGenAI is required lazily inside the route — NOT at module load time
+// This prevents crashes when AI_INTEGRATIONS_GEMINI_API_KEY is not set
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 const users = sqliteTable("users", {
@@ -56,8 +57,17 @@ async function initDb() {
   console.log("[DB] Tables initialized.");
 }
 
-// ─── AI ───────────────────────────────────────────────────────────────────────
-const ai = new GoogleGenAI({ apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY || "" });
+// ─── AI — lazy init to avoid crash when key is missing ───────────────────────
+let _ai = null;
+function getAI() {
+  if (!_ai) {
+    const { GoogleGenAI } = require("@google/genai");
+    const key = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+    if (!key) throw new Error("AI_INTEGRATIONS_GEMINI_API_KEY environment variable is not set in Vercel.");
+    _ai = new GoogleGenAI({ apiKey: key });
+  }
+  return _ai;
+}
 
 const SYSTEM_PROMPT = `You are Manthan, a super friendly, encouraging AI Interview Coach. Your default mode is INTERVIEWER.
 
@@ -221,6 +231,7 @@ app.post("/api/conversations/:id/messages", async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    const ai = getAI();
     const stream = await ai.models.generateContentStream({ model: "gemini-2.5-flash", contents: chatHistory });
     let fullResponse = "";
     for await (const chunk of stream) {
