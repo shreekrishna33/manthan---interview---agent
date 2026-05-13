@@ -2,7 +2,7 @@ import { Express } from "express";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import { db } from "./db";
-import { users } from "@shared/schema";
+import { users } from "../shared/models/user";
 import { eq } from "drizzle-orm";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "super-secret-key-1234";

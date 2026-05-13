@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { insertMessageSchema, insertConversationSchema, conversations, messages } from "./models/chat.ts";
+import { insertMessageSchema, insertConversationSchema, conversations, messages } from "./models/chat";
 
 export const api = {
   chat: {
