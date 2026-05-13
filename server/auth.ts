@@ -1,59 +1,33 @@
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
 import { Express } from "express";
-import session from "express-session";
-import createMemoryStore from "memorystore";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
 import { db } from "./db";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
+const JWT_SECRET = process.env.SESSION_SECRET || "super-secret-key-1234";
+
 export function setupAuth(app: Express) {
-  const MemoryStore = createMemoryStore(session);
-  
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || "super-secret-key-1234",
-      resave: false,
-      saveUninitialized: false,
-      store: new MemoryStore({
-        checkPeriod: 86400000 // prune expired entries every 24h
-      }),
-      cookie: { maxAge: 86400000 },
-    })
-  );
+  app.use(cookieParser());
 
-  app.use(passport.initialize());
-  app.use(passport.session());
-
-  passport.use(
-    new LocalStrategy(async (username, password, done) => {
+  // Middleware to attach user to req and mock passport's req.isAuthenticated
+  app.use(async (req, res, next) => {
+    (req as any).isAuthenticated = () => false;
+    const token = req.cookies.auth_token;
+    
+    if (token) {
       try {
-        const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
-        if (!user) {
-          return done(null, false, { message: "Incorrect username." });
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        const [user] = await db.select().from(users).where(eq(users.id, decoded.id)).limit(1);
+        if (user) {
+          (req as any).user = user;
+          (req as any).isAuthenticated = () => true;
         }
-        // Very basic plain text comparison for a simple login
-        if (user.password !== password) {
-          return done(null, false, { message: "Incorrect password." });
-        }
-        return done(null, user);
       } catch (err) {
-        return done(err);
+        // invalid token
       }
-    })
-  );
-
-  passport.serializeUser((user: any, done) => {
-    done(null, user.id);
-  });
-
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
-      done(null, user);
-    } catch (err) {
-      done(err);
     }
+    next();
   });
 
   app.post("/api/register", async (req, res, next) => {
@@ -67,28 +41,38 @@ export function setupAuth(app: Express) {
 
       const [user] = await db.insert(users).values({ username, password }).returning();
       
-      req.login(user, (err) => {
-        if (err) return next(err);
-        res.status(201).json(user);
-      });
+      const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('auth_token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+      res.status(201).json(user);
     } catch (err) {
       next(err);
     }
   });
 
-  app.post("/api/login", passport.authenticate("local"), (req, res) => {
-    res.status(200).json(req.user);
+  app.post("/api/login", async (req, res, next) => {
+    try {
+      const { username, password } = req.body;
+      const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      
+      if (!user || user.password !== password) {
+        return res.status(401).json({ message: "Incorrect username or password." });
+      }
+
+      const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
+      res.cookie('auth_token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+      res.status(200).json(user);
+    } catch (err) {
+      next(err);
+    }
   });
 
-  app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
-      if (err) return next(err);
-      res.sendStatus(200);
-    });
+  app.post("/api/logout", (req, res) => {
+    res.clearCookie('auth_token');
+    res.sendStatus(200);
   });
 
   app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    res.status(200).json(req.user);
+    if (!(req as any).isAuthenticated()) return res.sendStatus(401);
+    res.status(200).json((req as any).user);
   });
 }
