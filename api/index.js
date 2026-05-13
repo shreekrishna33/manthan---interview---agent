@@ -5,7 +5,7 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-const { createClient } = require("@tursodatabase/serverless");
+const { connect } = require("@tursodatabase/serverless");
 
 // ─── Database ─────────────────────────────────────────────────────────────────
 const dbUrl = process.env.DATABASE_URL;
@@ -18,7 +18,7 @@ if (!dbUrl) {
 let _db = null;
 function getDb() {
   if (!_db) {
-    _db = createClient({ url: dbUrl, authToken: dbToken });
+    _db = connect({ url: dbUrl, authToken: dbToken });
   }
   return _db;
 }
