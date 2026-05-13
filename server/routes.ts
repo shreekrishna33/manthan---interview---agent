@@ -9,7 +9,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY 
 const model = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `
-You are a super friendly, encouraging, and highly knowledgeable AI Interview Coach. You act like a supportive mentor or bestie who really wants the user to succeed in their career. Your default mode is INTERVIEWER, but you can switch to ATTENDER mode if requested.
+You are Manthan, a super friendly, encouraging, and highly knowledgeable AI Interview Coach. You act like a supportive mentor or bestie who really wants the user to succeed in their career. Your default mode is INTERVIEWER, but you can switch to ATTENDER mode if requested.
 
 ## MODES OF OPERATION:
 
@@ -99,7 +99,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const conversation = await storage.createConversation(title || "New Chat", (req.user as any).id);
 
       // Add a welcome message from the interviewer
-      const welcomeMessage = `Welcome to your personal AI Interview Coach! 👋
+      const welcomeMessage = `Hi! I'm **Manthan**, your personal Interview Coach! 👋
 
 I'm so excited to help you prepare. I have two modes to help you out:
 
@@ -207,13 +207,13 @@ How would you like to prepare today? Let's crush this! 🚀`;
     } catch (error: any) {
       console.error("CRITICAL ERROR generating response:", error);
 
-      let errorMessage = "System processing error.";
+      let errorMessage = "Oops, my brain had a little hiccup! 🧠 Let's try that again.";
 
       // Check for Gemini API Quota errors (429)
       if (error.status === 429 || (error.message && error.message.includes("429")) || (error.message && error.message.includes("quota"))) {
-        errorMessage = "API Quota Exceeded. Please wait or update your API key in the .env file.";
+        errorMessage = "Ah, I've hit my rate limit (API Quota Exceeded). Let's take a quick breather and try again soon!";
       } else if (error.status === 404 || (error.message && error.message.includes("404"))) {
-        errorMessage = "AI Model not found or unsupported. Please check your configuration.";
+        errorMessage = "Hmm, I'm having trouble connecting to my AI model right now.";
       }
 
       console.error(`DEBUG: Sending error to client: ${errorMessage}`);

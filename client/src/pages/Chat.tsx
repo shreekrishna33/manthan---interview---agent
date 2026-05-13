@@ -243,7 +243,7 @@ export default function Chat() {
 
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 w-full h-16 border-b border-border bg-background/90 backdrop-blur z-50 flex items-center px-4 justify-between">
-        <h1 className="font-display font-bold text-xl tracking-tighter text-primary">AI Interview Coach</h1>
+        <h1 className="font-display font-bold text-xl tracking-tighter text-primary">Manthan</h1>
         <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 border border-border rounded-lg">
           {sidebarOpen ? <X /> : <Menu />}
         </button>

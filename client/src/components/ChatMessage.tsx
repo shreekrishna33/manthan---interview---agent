@@ -50,7 +50,7 @@ export function ChatMessage({ role, content, isStreaming, autoPlay, createdAt }:
       <div className="flex-1 overflow-hidden min-w-0">
         <div className="flex items-center gap-2 mb-2">
           <span className={cn("text-xs font-semibold uppercase tracking-wider", isAI ? "text-primary" : "text-white/90")}>
-            {isAI ? "AI Coach" : "You"}
+            {isAI ? "Manthan" : "You"}
           </span>
           <span className={cn("text-xs mr-auto", isAI ? "text-muted-foreground" : "text-white/70")}>
             {createdAt ? new Date(createdAt).toLocaleString() : new Date().toLocaleString()}
@@ -64,12 +64,12 @@ export function ChatMessage({ role, content, isStreaming, autoPlay, createdAt }:
               className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors mb-2"
             >
               <Brain className="w-3 h-3" />
-              {showThinking ? "Hide AI Thoughts" : "View AI Thoughts"}
+              {showThinking ? "Hide Manthan's Thoughts" : "View Manthan's Thoughts"}
             </button>
 
             {showThinking && (
               <div className="bg-muted/30 border border-border rounded-lg p-3 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-2 shadow-sm">
-                <p className="mb-1 text-[10px] opacity-50 uppercase font-semibold">Coach's Inner Monologue</p>
+                <p className="mb-1 text-[10px] opacity-50 uppercase font-semibold">Manthan's Inner Monologue</p>
                 {reasoning}
               </div>
             )}
